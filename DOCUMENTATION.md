@@ -115,6 +115,25 @@ files on disk. When browsing the packed client, changes are saved back into
 - `Q` / `E` cycle through animation clips.
 - Character pieces (bodies, hands, feet) show in bind pose; full characters can
   be assembled and posed.
+- Free camera in both viewers: `W` `A` `S` `D` move, `R` / `F` up and down,
+  `Shift` is faster. In the scene and effect viewer a left drag turns the view
+  from where you stand, the middle button orbits, the right one pans and the
+  wheel zooms. In the SCN 3D Preview wireframe moved to `X`.
+- **Map Preview** (on a `bginfo-*.ini` in `MapInfo`, or on a map `.scn`: one
+  button per map that loads it): the whole map as the game builds it, `[SKY]` +
+  `[STATIC]` + `[DYNAMIC]` (`*_occlusion` is never drawn), with lightmaps
+  (texture x lightmap x 2), each scene's first clip looping at 4.8 ticks per ms
+  (trains, arrows, lasers), opacity / vertex / UV ("as uvani") keys, the sky
+  around the eye and the `[ADDON_SEQUENCE]` effects on their `Dummy` node.
+  `oct_*` (collision) and `sector*` meshes are not drawn.
+- `.seq` effects play as the client does: a named particle node hangs from the
+  node of that name in the sequence's loaded `.scn` (crystal plasma's
+  `ring*_Dummy` arcs), the key size is the quad's half extent, `ScaleFlagSize`
+  (bit 4) scales with the node, continuous emitters do not restart with the
+  loop, `billboard` meshes (name token or flag 16) face the camera and only
+  `nodepthwrite` turns depth writes off.
+- `.dds` files with a mip level that is not a multiple of 4 (1536 chains,
+  498-wide effects) load now: levels are read in 4x4 blocks, rounded up.
 
 ## Add Tools (Weapons, Costumes, Maps)
 

@@ -118,6 +118,27 @@ Los `.scn` y `.seq` abren en un visor 3D dentro de la app:
 - `Q` / `E` cambian entre clips de animacion.
 - Las piezas de personaje (cuerpos, manos, pies) salen en pose bind; los
   personajes completos se pueden armar y posar.
+- Camara libre en los dos visores: `W` `A` `S` `D` mueven, `R` / `F` suben y
+  bajan, `Shift` acelera. En el visor de escenas y efectos el clic izquierdo
+  arrastrado gira la vista desde donde estas, el boton central orbita, el
+  derecho desplaza y la rueda acerca. En el SCN 3D Preview el alambre pasa a `X`.
+- **Map Preview** (en un `bginfo-*.ini` de `MapInfo`, o en una `.scn` de mapa:
+  un boton por cada mapa que la carga): el mapa entero como lo arma el juego,
+  `[SKY]` + `[STATIC]` + `[DYNAMIC]` (las `*_occlusion` no se dibujan), con
+  lightmaps (textura x lightmap x 2), el primer clip de cada escena en bucle a
+  4.8 ticks por ms (trenes, flechas, laseres), llaves de opacidad, vertice y
+  UV ("as uvani"), cielo alrededor del ojo y los efectos de `[ADDON_SEQUENCE]`
+  en su nodo `Dummy`. Las mallas `oct_*` (colision) y `sector*` no se dibujan.
+- Los efectos `.seq` se reproducen como el cliente: cada nodo de particulas
+  con nombre cuelga del nodo de ese nombre del `.scn` que carga la secuencia
+  (los arcos `ring*_Dummy` de la crystal plasma), el tamano de la llave es la
+  semianchura del quad, `ScaleFlagSize` (bit 4) escala con el nodo, los
+  emisores continuos no se reinician con el bucle, las mallas `billboard`
+  (nombre o flag 16) miran a la camara y solo `nodepthwrite` quita la
+  escritura de profundidad.
+- Los `.dds` con tamanos que no son multiplo de 4 en algun mip (cadenas de 1536,
+  efectos de 498 de ancho) ya cargan: se leen por bloques de 4x4 redondeando
+  hacia arriba.
 
 ## Add Tools (Armas, Costumes, Mapas)
 

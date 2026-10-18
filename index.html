@@ -3019,6 +3019,23 @@ window.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
+  // A map with everything its bginfo loads: scenes, sky, lightmaps, effects.
+  function mapPreviewButton(iniName, label){
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'scnTextureChange';
+    btn.textContent = label;
+    btn.title = iniName;
+    btn.addEventListener('click', async () => {
+      btn.disabled = true; btn.textContent = 'Opening map...';
+      const r = await window.puente.mapPreview3D({ ruta: resourcePath, fullName: iniName });
+      btn.disabled = false; btn.textContent = label;
+      if(!r || !r.ok){ alert('Map preview error: ' + (r ? r.error : 'unknown')); return; }
+      resourceResult.textContent = `Map preview opened (${r.scenes} scenes, ${r.seqs} effects${r.missing ? `, ${r.missing} files not found` : ''}).`;
+    });
+    return btn;
+  }
+
   async function loadResourceList(){
     const result = await window.puente.resourceBrowserList({
       ruta: resourcePath,
@@ -3079,6 +3096,17 @@ window.addEventListener('DOMContentLoaded', async () => {
         resourceResult.textContent = `3D preview opened (${r.meshes} meshes).`;
       });
       bar.appendChild(btn);
+      resourcePreviewBody.appendChild(bar);
+      // The whole map(s) this scene belongs to: every scene and effect its bginfo loads.
+      window.puente.mapsForScene({ ruta: resourcePath, fullName }).then(r => {
+        for(const m of (r && r.ok ? r.maps : [])) bar.appendChild(mapPreviewButton(m.fullName, 'Map Preview · ' + m.ini.replace(/^bginfo-|\.ini$/gi, '')));
+      }).catch(() => {});
+    }
+
+    if(/(^|\/)bginfo-[^/]*\.ini$/i.test(fullName)){
+      const bar = document.createElement('div');
+      bar.className = 'scnTextureBox';
+      bar.appendChild(mapPreviewButton(fullName, 'Map Preview'));
       resourcePreviewBody.appendChild(bar);
     }
 

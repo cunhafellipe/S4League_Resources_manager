@@ -68,7 +68,7 @@ function sampleQuat(keys, def, t) {
   return keys[keys.length - 1].q.slice();
 }
 
-function composeTRS(a, tick) {
+export function composeTRS(a, tick) {
   const t = a.duration ? (tick % a.duration) : tick;
   return buildTRS(sampleVec(a.trans, a.initT, t), sampleQuat(a.rot, a.initR, t), sampleVec(a.scale, a.initS, t));
 }
@@ -88,7 +88,7 @@ function sampleBoneTRS(bone, animName, tick) {
   return { T: sampleVec(a.trans, a.initT, t), q: sampleQuat(a.rot, a.initR, t), S: sampleVec(a.scale, a.initS, t) };
 }
 
-function sampleBonePose(bone, p) {
+export function sampleBonePose(bone, p) {
   const A = sampleBoneTRS(bone, p.clipA, p.tickA);
   if (p.blend > 0.001 && p.clipB && p.clipB !== p.clipA && A) {
     const B = sampleBoneTRS(bone, p.clipB, p.tickB);

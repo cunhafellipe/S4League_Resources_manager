@@ -2905,13 +2905,17 @@ function resolveScnMeshTextures(archive, scnFullName, meshes){
   }
 }
 
-async function writeCharacterTempFolder(archive, charFolder, gender){
-  const rels = [
-    gender + '_bip.scn',
-    'body/00_' + gender + '_body.scn', 'leg/00_' + gender + '_leg.scn',
-    'hand/00_' + gender + '_hand.scn', 'foot/00_' + gender + '_foot.scn',
-    'face/00_' + gender + '_face.scn', 'hair/00_' + gender + '_hair.scn',
-  ];
+// gender: one sex or a list of them; extra: more files of the character
+// folder (the costume piece being previewed).
+async function writeCharacterTempFolder(archive, charFolder, gender, extra = []){
+  const rels = [];
+  for(const g of [].concat(gender)){
+    rels.push(g + '_bip.scn',
+      'body/00_' + g + '_body.scn', 'leg/00_' + g + '_leg.scn',
+      'hand/00_' + g + '_hand.scn', 'foot/00_' + g + '_foot.scn',
+      'face/00_' + g + '_face.scn', 'hair/00_' + g + '_hair.scn');
+  }
+  rels.push(...extra);
   const tempRoot = path.join(app.getPath('temp'), 'ItemManagerScnView', `char_${Date.now()}`);
   const charOut = path.join(tempRoot, 'resources', 'model', 'character');
   const findEntry = (full) => archive.entries.find(e => e.fullName === full.toLowerCase());
@@ -2964,6 +2968,26 @@ ipcMain.handle('scnPreview3D', async (event, data) => {
     const base = path.posix.basename(entry.fullName);
     const bipMatch = base.match(/^(male|female)_bip\.scn$/i);
 
+    // A costume piece: worn by the character of its sex (both sexes are
+    // written, the viewer switches between them and their clips).
+    const costume = entry.fullName.match(/^((?:.*\/)?model\/character)\/(body|leg|hand|foot|face|hair|acc)\/([^/]+\.scn)$/i);
+    if(costume){
+      const [, charFolder, slot, file] = costume;
+      const gender = /(^|[^a-z])female([^a-z]|$)/i.test(file) ? 'female' : 'male';
+      const { charOut, tempRoot, wrote } = await writeCharacterTempFolder(archive, charFolder, ['male', 'female'], [slot + '/' + file]);
+      if(wrote >= 1){
+        const win = new BrowserWindow({
+          width: 1000, height: 760, title: '3D Preview - ' + file + ' on the ' + gender + ' character',
+          backgroundColor: '#15181d',
+          webPreferences: { nodeIntegration: true, contextIsolation: false, additionalArguments: ['--char=' + charOut + '|' + gender, '--equip=' + slot.toLowerCase() + '|' + file, '--res=' + data.ruta, '--entry=' + entry.fullName] }
+        });
+        win.setMenuBarVisibility(false);
+        win.on('closed', () => { fsp.rm(tempRoot, { recursive: true, force: true }).catch(() => {}); });
+        await win.loadFile(path.join(__dirname, 'viewer', 'scn_viewer.html'));
+        return { ok: true, mode: 'character', meshes: wrote };
+      }
+    }
+
     if(bipMatch){
       const gender = bipMatch[1].toLowerCase();
       const charFolder = path.posix.dirname(entry.fullName);
@@ -2994,6 +3018,65 @@ ipcMain.handle('scnPreview3D', async (event, data) => {
 const { collectDroppedFiles } = require('./src/utils/collectFiles');
 const { startSeqServer } = require('./seqviewer/seqserver');
 
+// The weapon-table entry that draws this .scn (<scene value1 / value2>, any
+// region's xml/*weapon.x7): its <sequence> / <sequence2> effects, each on a
+// node of the weapon (crystal plasma: crystal_plasma_sword_eff.seq on
+// eff_Dummy). null when no weapon uses the scene.
+function weaponEffectsOf(archive, scnName){
+  const want = String(scnName).toLowerCase();
+  for(const table of archive.entries.filter(e => /(^|\/)xml\/(_[a-z]{2}_)?weapon\.x7$/i.test(e.fullName))){
+    let text = '';
+    try { text = getDecodedResourceData(archive, table).data.toString('latin1'); } catch(e) { continue; }
+    for(let p = text.indexOf('<weapon '); p >= 0; p = text.indexOf('<weapon ', p + 1)){
+      const end = text.indexOf('</weapon>', p);
+      const blk = text.slice(p, end < 0 ? undefined : end);
+      const scene = /<scene\b[^>]*>/i.exec(blk);
+      if(!scene || ![...scene[0].matchAll(/value\d+="([^"]*)"/gi)].some(v => v[1].toLowerCase() === want)) continue;
+      const fx = [];
+      for(const tag of blk.matchAll(/<sequence2?\b[^>]*>/gi)){
+        for(const f of tag[0].matchAll(/file_name_((?:2_)?\d+)="([^"]+)"/gi)){
+          const node = new RegExp(`node_name_${f[1]}="([^"]*)"`, 'i').exec(tag[0]);
+          if(node && node[1]) fx.push({ node: node[1], file: f[2] });
+        }
+      }
+      return fx;
+    }
+  }
+  return null;
+}
+
+// The item-table entry that wears this .scn (<graphic to_part_scene_file /
+// to_node_scene_fileN>, any region's xml/*item.x7: pets, costume pieces,
+// accessories): its <sequence node_nameN file_nameN> effects, each on a node
+// of the item (pet_2012_halloween_imp_aura.seq on Pet_halloween_imp_Dummy).
+// Recolors list the same .scn again: the first entry with effects wins.
+// null when no item uses the scene.
+function itemEffectsOf(archive, scnName){
+  const want = String(scnName).toLowerCase();
+  let found = null;
+  for(const table of archive.entries.filter(e => /(^|\/)xml\/(_[a-z]{2}_)?item\.x7$/i.test(e.fullName))){
+    let text = '';
+    try { text = getDecodedResourceData(archive, table).data.toString('latin1'); } catch(e) { continue; }
+    for(let p = text.indexOf('<item '); p >= 0; p = text.indexOf('<item ', p + 1)){
+      const end = text.indexOf('</item>', p);
+      const blk = text.slice(p, end < 0 ? undefined : end);
+      const graphic = /<graphic\b[^>]*>/i.exec(blk);
+      if(!graphic || ![...graphic[0].matchAll(/to_(?:part|node)_scene_file\d*="([^"]*)"/gi)].some(v => v[1].toLowerCase() === want)) continue;
+      const fx = [];
+      for(const tag of blk.matchAll(/<sequence\b[^>]*>/gi)){
+        for(const f of tag[0].matchAll(/file_name(\d+)="([^"]+)"/gi)){
+          if(f[2] === '-') continue;
+          const node = new RegExp(`node_name${f[1]}="([^"]*)"`, 'i').exec(tag[0]);
+          if(node && node[1]) fx.push({ node: node[1], file: f[2] });
+        }
+      }
+      if(fx.length) return fx;
+      found = found || fx;
+    }
+  }
+  return found;
+}
+
 async function previewSceneEngine(data, entry, deepKey){
   let srv = null, tempRoot = null;
   try {
@@ -3021,6 +3104,18 @@ async function previewSceneEngine(data, entry, deepKey){
     addEntry(entry);
     const scanned = new Set([entry.fullName]);
     const queue = [entry];
+    // A weapon: drawn as the game draws one, with its own effects and what they load.
+    const weaponFx = deepKey === 'scn' ? weaponEffectsOf(archive, entry.fullName.split('/').pop()) : null;
+    // Packages with or without the resources/ prefix.
+    const isWeapon = !!weaponFx || (deepKey === 'scn' && /(^|\/)model\/weapon\//i.test(entry.fullName));
+    // Any other item (a pet, a costume piece): the item table's effects on its nodes.
+    const itemFx = !isWeapon && deepKey === 'scn' ? itemEffectsOf(archive, entry.fullName.split('/').pop()) : null;
+    const fxList = weaponFx || itemFx || [];
+    for(const fx of fxList){
+      const hit = resolveEntry(fx.file);
+      if(!hit || scanned.has(hit.fullName)) continue;
+      addEntry(hit); scanned.add(hit.fullName); queue.push(hit);
+    }
     while(queue.length){
       const buf = getDecodedResourceData(archive, queue.shift()).data;
       for(const ref of scanSeqAssetNames(buf)){
@@ -3061,7 +3156,12 @@ async function previewSceneEngine(data, entry, deepKey){
       fsp.rm(tempRoot, { recursive: true, force: true }).catch(() => {});
     });
     
-    const shared = deepKey === 'scn' && /^resources\/model\//i.test(entry.fullName) ? '&shared=1' : '';
+    const fxParam = fxList.length
+      ? `&fx=${encodeURIComponent(JSON.stringify(fxList.map(f => ({ node: f.node, file: f.file.replace(/\\/g, '/').split('/').pop() }))))}`
+      : '';
+    const shared = isWeapon
+      ? `&weapon=${encodeURIComponent(name)}${fxParam}`
+      : (deepKey === 'scn' && /(^|\/)model\//i.test(entry.fullName) ? '&shared=1' : '') + fxParam;
     await win.loadURL(`http://127.0.0.1:${srv.port}/?${deepKey}=${encodeURIComponent(name)}${shared}`);
 
     return { ok: true, deps: toExtract.size };
@@ -3071,6 +3171,195 @@ async function previewSceneEngine(data, entry, deepKey){
     return { ok: false, error: e.message };
   }
 }
+
+// --- Map preview -------------------------------------------------------------
+// A map as the client loads it: Resources/MapInfo/bginfo-*.ini lists its
+// scenes ([SKY] object_1, [STATIC] / [DYNAMIC] object_N, in model/background;
+// the *_occlusion ones only feed the client's culling) and its effects
+// ([ADDON_SEQUENCE] object_N = an effects .seq looping on the map node named
+// by object_N_Dummy).
+// bginfo text: UTF-8 when it is valid UTF-8, else the client's Korean code page.
+function decodeIniText(bytes){
+  try { return new TextDecoder('utf-8', { fatal: true }).decode(bytes); } catch(e) {}
+  try { return new TextDecoder('euc-kr').decode(bytes); } catch(e) { return bytes.toString('latin1'); }
+}
+
+function parseBgInfo(buf){
+  const info = { name: '', sky: '', statics: [], dynamics: [], seqs: [] };
+  const seqs = new Map();
+  let section = '';
+  for(const raw of buf.toString('latin1').split(/\r?\n/)){
+    const line = raw.trim();
+    if(!line || line[0] === ';') continue;
+    if(line[0] === '['){
+      const end = line.indexOf(']');
+      section = line.slice(1, end < 0 ? undefined : end).trim().toUpperCase();
+      continue;
+    }
+    const eq = line.indexOf('=');
+    if(eq < 0) continue;
+    const key = line.slice(0, eq).trim();
+    const val = line.slice(eq + 1).trim();
+    if(section === 'MAPINFO' && key.toLowerCase() === 'name'){ info.name = decodeIniText(Buffer.from(val, 'latin1')); continue; }
+    const object = /^object_(\d+)/i.exec(key);
+    if(!object || !val) continue;
+    if(section === 'SKY'){ if(!info.sky) info.sky = val; }
+    else if(section === 'STATIC') info.statics.push(val);
+    else if(section === 'DYNAMIC') info.dynamics.push(val);
+    else if(section === 'ADDON_SEQUENCE'){
+      const n = Number(object[1]);
+      if(!seqs.has(n)) seqs.set(n, { file: '', dummy: '' });
+      seqs.get(n)[/_dummy$/i.test(key) ? 'dummy' : 'file'] = val;
+    }
+  }
+  info.seqs = [...seqs.keys()].sort((a, b) => a - b).map(n => seqs.get(n)).filter(s => s.file);
+  return info;
+}
+
+const isBgInfoResource = fullName => /(^|\/)bginfo-[^/]*\.ini$/i.test(fullName);
+const baseNameOf = ref => path.posix.basename(String(ref).replace(/\\/g, '/'));
+
+const mapListCache = new WeakMap();
+function mapsOfArchive(archive){
+  const hit = mapListCache.get(archive);
+  if(hit && hit.count === archive.entries.length) return hit.maps;
+  const maps = [];
+  for(const e of archive.entries){
+    if(!isBgInfoResource(e.fullName)) continue;
+    try { maps.push({ entry: e, info: parseBgInfo(getDecodedResourceData(archive, e).data) }); } catch(err) {}
+  }
+  mapListCache.set(archive, { count: archive.entries.length, maps });
+  return maps;
+}
+
+// The bginfo maps that load this scene.
+ipcMain.handle('mapsForScene', async (event, data) => {
+  try {
+    const archive = getResourceArchive(data.ruta);
+    const base = baseNameOf(data.fullName || '').toLowerCase();
+    const maps = mapsOfArchive(archive)
+      .filter(m => [m.info.sky, ...m.info.statics, ...m.info.dynamics].some(f => f && baseNameOf(f).toLowerCase() === base))
+      .map(m => ({ fullName: m.entry.fullName, ini: path.posix.basename(m.entry.fullName), name: m.info.name }));
+    return { ok: true, maps };
+  } catch(e){
+    return { ok: false, error: e.message, maps: [] };
+  }
+});
+
+ipcMain.handle('mapPreview3D', async (event, data) => {
+  let srv = null, tempRoot = null;
+  try {
+    const archive = getResourceArchive(data.ruta);
+    const want = String(data.fullName || '').toLowerCase();
+    const iniEntry = archive.entries.find(e => e.fullName.toLowerCase() === want);
+    if(!iniEntry) return { ok: false, error: 'File not found.' };
+    const info = parseBgInfo(getDecodedResourceData(archive, iniEntry).data);
+
+    const byBase = new Map(), byStem = new Map();
+    for(const e of archive.entries){
+      const b = baseNameOf(e.fullName).toLowerCase();
+      if(!byBase.has(b)) byBase.set(b, []);
+      byBase.get(b).push(e);
+      const stem = b.replace(/\.[^.]+$/, '');
+      if(!byStem.has(stem)) byStem.set(stem, []);
+      byStem.get(stem).push(e);
+    }
+    const IMAGE = ['dds', 'tga', 'png', 'bmp', 'jpg', 'jpeg'];
+    const extOf = name => { const i = name.lastIndexOf('.'); return i < 0 ? '' : name.slice(i + 1).toLowerCase(); };
+    const dirOf = e => path.posix.dirname(e.fullName.toLowerCase());
+    // The file in the asking file's folder first (the client loads a scene's
+    // textures from its own folder), then anywhere. A texture may ship under
+    // another extension than the scene names (sub_wall.tga -> sub_wall.dds).
+    const resolve = (ref, dir) => {
+      const b = baseNameOf(ref).toLowerCase();
+      if(!b) return null;
+      const exact = byBase.get(b) || [];
+      const alts = IMAGE.includes(extOf(b))
+        ? (byStem.get(b.replace(/\.[^.]+$/, '')) || [])
+            .filter(e => !exact.includes(e) && IMAGE.includes(extOf(e.fullName)))
+            .sort((x, y) => IMAGE.indexOf(extOf(x.fullName)) - IMAGE.indexOf(extOf(y.fullName)))
+        : [];
+      const inDir = list => list.find(e => dirOf(e) === dir) || null;
+      return inDir(exact) || inDir(alts) || exact[0] || alts[0] || null;
+    };
+
+    tempRoot = path.join(app.getPath('temp'), 'ItemManagerMapView', String(Date.now()));
+    const written = new Set();
+    const missing = new Set();
+    // Written under the name the scene asks for: the viewer reads the content
+    // (DDS / TGA / BMP...), not the extension.
+    const put = async (sub, ref, entry, data) => {
+      const out = path.join(tempRoot, sub, baseNameOf(ref));
+      if(written.has(out.toLowerCase())) return;
+      written.add(out.toLowerCase());
+      await fsp.mkdir(path.dirname(out), { recursive: true });
+      await fsp.writeFile(out, data || getDecodedResourceData(archive, entry).data);
+    };
+
+    const BG = 'resources/model/background';
+    const list = [
+      ...(info.sky ? [{ file: info.sky, kind: 'sky' }] : []),
+      ...info.statics.map(file => ({ file, kind: 'static' })),
+      ...info.dynamics.map(file => ({ file, kind: 'dynamic' })),
+    ];
+    const scenes = [];
+    for(const s of list){
+      if(s.file.includes('occlusion')) continue;   // culling data, never drawn
+      const entry = resolve(s.file, BG);
+      if(!entry){ missing.add(s.file); continue; }
+      const buf = getDecodedResourceData(archive, entry).data;
+      await put('map', s.file, entry, buf);
+      for(const ref of scanSeqAssetNames(buf)){
+        if(/\.scn$/i.test(ref)) continue;
+        const tex = resolve(ref, dirOf(entry));
+        if(tex) await put('map', ref, tex); else missing.add(baseNameOf(ref));
+      }
+      scenes.push({ file: baseNameOf(s.file), kind: s.kind });
+    }
+
+    // Each effect with what it loads: its textures and .scn models (and theirs).
+    const seqs = [];
+    for(const s of info.seqs){
+      const entry = resolve(s.file, 'resources/effects');
+      if(!entry){ missing.add(s.file); continue; }
+      const queue = [[s.file, entry]];
+      const seen = new Set();
+      while(queue.length){
+        const [ref, e] = queue.shift();
+        if(seen.has(e.fullName)) continue;
+        seen.add(e.fullName);
+        const buf = getDecodedResourceData(archive, e).data;
+        await put('effects', ref, e, buf);
+        for(const dep of scanSeqAssetNames(buf)){
+          const hit = resolve(dep, dirOf(e));
+          if(!hit){ missing.add(baseNameOf(dep)); continue; }
+          if(/\.scn$/i.test(hit.fullName)) queue.push([dep, hit]);
+          else await put('effects', dep, hit);
+        }
+      }
+      seqs.push({ file: baseNameOf(s.file), dummy: s.dummy });
+    }
+
+    const ini = path.posix.basename(iniEntry.fullName);
+    const manifest = { ini, name: info.name, scenes, seqs, missing: [...missing].slice(0, 300) };
+    await fsp.writeFile(path.join(tempRoot, 'map.json'), JSON.stringify(manifest));
+
+    const fallbackRoot = path.join(getResourceBase(data.ruta), 'extracted_resources');
+    srv = await startSeqServer(tempRoot, { fallbackRoot: fs.existsSync(fallbackRoot) ? fallbackRoot : null });
+    const win = new BrowserWindow({ width: 1280, height: 860, title: 'Map Preview - ' + ini, backgroundColor: '#15181d' });
+    win.setMenuBarVisibility(false);
+    win.on('closed', () => {
+      try { srv && srv.close(); } catch(e) {}
+      fsp.rm(tempRoot, { recursive: true, force: true }).catch(() => {});
+    });
+    await win.loadURL(`http://127.0.0.1:${srv.port}/?map=map.json`);
+    return { ok: true, scenes: scenes.length, seqs: seqs.length, missing: missing.size };
+  } catch(e){
+    try { srv && srv.close(); } catch(err) {}
+    if(tempRoot) fsp.rm(tempRoot, { recursive: true, force: true }).catch(() => {});
+    return { ok: false, error: e.message };
+  }
+});
 
 ipcMain.handle('seqPreview3D', async (event, data) => {
   const archive = getResourceArchive(data.ruta);

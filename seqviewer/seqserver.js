@@ -114,7 +114,17 @@ function startSeqServer(root, opts = {}){
     if(!fbTried){ fbTried = true; if(opts.fallbackRoot && fs.existsSync(opts.fallbackRoot)) fbIdx = buildIndex(opts.fallbackRoot); }
     return fbIdx;
   };
-  const resolveAny = name => resolveFile(idx, name) || (ensureFb() ? resolveFile(fbIdx, name) : null);
+  // "map/x.dds", "effects/x.dds": that folder of the preview first (a map and
+  // its effects may ship different files under one name), then by name.
+  const rootDir = path.resolve(root);
+  const resolveRel = name => {
+    const rel = String(name).replace(/\\/g, '/').replace(/^\/+/, '');
+    if(!rel.includes('/')) return null;
+    const p = path.resolve(rootDir, rel);
+    if(!p.startsWith(rootDir + path.sep)) return null;
+    try { return fs.statSync(p).isFile() ? { path: p, swapped: false } : null; } catch(e) { return null; }
+  };
+  const resolveAny = name => resolveRel(name) || resolveFile(idx, name) || (ensureFb() ? resolveFile(fbIdx, name) : null);
 
   const listOf = ext => [...idx.byName.entries()]
     .filter(([n]) => n.endsWith(ext))

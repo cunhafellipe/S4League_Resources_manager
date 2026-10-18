@@ -133,11 +133,49 @@ try {
   renderer.domElement.addEventListener('wheel', e => { e.preventDefault(); dist *= (1 + Math.sign(e.deltaY)*0.1); dist = Math.max(radius*0.03, dist); updateCam(); }, { passive: false });
   window.addEventListener('resize', () => { camera.aspect = window.innerWidth/window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); });
 
+  // Free camera: W A S D move the orbit centre (and the eye with it) along the
+  // view, R / F up and down, Shift triples the speed. The mouse keeps orbiting
+  // around the new centre and the wheel keeps zooming. (Wireframe moved to X.)
+  const flyKeys = new Set();
+  window.addEventListener('keydown', e => {
+    const k = e.key.toLowerCase(), t = e.target && e.target.tagName;
+    if(['w','a','s','d','r','f','shift'].includes(k) && t !== 'INPUT' && t !== 'SELECT' && t !== 'TEXTAREA') flyKeys.add(k);
+  });
+  window.addEventListener('keyup', e => flyKeys.delete(e.key.toLowerCase()));
+  window.addEventListener('blur', () => flyKeys.clear());
+  let flyLast = performance.now();
+  (function flyTick(){
+    requestAnimationFrame(flyTick);
+    const now = performance.now(), dt = Math.min(0.1, (now - flyLast) / 1000); flyLast = now;
+    if(!flyKeys.size || window.__poseGrab) return;
+    const fwd = new THREE.Vector3().subVectors(center, camera.position).normalize();
+    const right = new THREE.Vector3().crossVectors(fwd, camera.up).normalize();
+    const move = new THREE.Vector3();
+    if(flyKeys.has('w')) move.add(fwd); if(flyKeys.has('s')) move.sub(fwd);
+    if(flyKeys.has('d')) move.add(right); if(flyKeys.has('a')) move.sub(right);
+    if(flyKeys.has('r')) move.y += 1; if(flyKeys.has('f')) move.y -= 1;
+    if(move.lengthSq() < 1e-9) return;
+    move.normalize().multiplyScalar(Math.max(radius, dist) * dt * (flyKeys.has('shift') ? 3 : 1));
+    center.add(move); updateCam();
+  })();
+
   if(charArg){
     const { loadCharacter, pieceTextureKey } = require('../src/engine/loader');
     const { assembleCharacter } = require('../src/engine/scn_character');
-    const [charDir, gender] = charArg.slice('--char='.length).split('|');
-    let CH = loadCharacter(charDir, gender || 'male');
+    const [charDir, genderArg] = charArg.slice('--char='.length).split('|');
+    let gender = genderArg || 'male';
+    // --equip=slot|file: the costume piece being previewed, worn by the
+    // character of its sex (a male piece does not fit the female skeleton).
+    const equipArg = argv.find(a => a.startsWith('--equip='));
+    const [equipSlot, equipFile] = equipArg ? equipArg.slice('--equip='.length).split('|') : ['', ''];
+    const equipFor = g => {
+      if(!equipSlot) return undefined;
+      const sex = /(^|[^a-z])female([^a-z]|$)/.test(equipFile.toLowerCase()) ? 'female'
+                : /(^|[^a-z])male([^a-z]|$)/.test(equipFile.toLowerCase()) ? 'male' : '';
+      if(sex && sex !== g) return undefined;
+      return { [equipSlot]: equipFile };
+    };
+    let CH = loadCharacter(charDir, gender, equipFor(gender));
     root.scale.z = -1;
 
     const grid = new THREE.GridHelper(500, 16, 0x2a3440, 0x1c242c); scene.add(grid);
@@ -145,7 +183,7 @@ try {
     function build(pose){
       for(const m of meshes){ root.remove(m); m.geometry.dispose(); }
       meshes = [];
-      const pieces = assembleCharacter(CH.skel, CH.parts, pose);
+      const pieces = assembleCharacter(CH.skel, CH.parts, pose, CH.accessories);
       for(const pc of pieces){
         if(!pc.positions.length || !pc.indices.length) continue;
         const g = new THREE.BufferGeometry();
@@ -160,7 +198,7 @@ try {
       frameFromRoot();
     }
     function updatePose(pose){
-      const pieces = assembleCharacter(CH.skel, CH.parts, pose);
+      const pieces = assembleCharacter(CH.skel, CH.parts, pose, CH.accessories);
       for(let i = 0; i < meshes.length && i < pieces.length; i++){
         const attr = meshes[i].geometry.getAttribute('position');
         attr.array.set(pieces[i].positions); attr.needsUpdate = true;
@@ -196,7 +234,23 @@ try {
       return d || 1000;
     }
     function ui(){
-      info.innerHTML = `${gender} · ${CH.skel.bones.length} bones · ${CH.animNames.length} clips<br>`;
+      info.innerHTML = `${gender} · ${CH.skel.bones.length} bones · ${CH.animNames.length} clips` +
+        (equipFile ? ` · wearing ${equipFile}${equipFor(gender) ? '' : ' (other sex)'}` : '') + '<br>';
+      // the other sex: same clip, same piece when it fits
+      const sexSel = document.createElement('select');
+      sexSel.style.cssText = 'margin-right:4px;';
+      for(const g of ['male', 'female']){ const o = document.createElement('option'); o.value = g; o.textContent = g; sexSel.appendChild(o); }
+      sexSel.value = gender;
+      sexSel.onchange = () => {
+        const clipName = cur();
+        gender = sexSel.value;
+        Object.assign(CH, loadCharacter(charDir, gender, equipFor(gender)));
+        const i = CH.animNames.indexOf(clipName);
+        clipIdx = i >= 0 ? i : Math.max(0, CH.animNames.indexOf('00008'));
+        build({ clipA: cur(), tickA: Math.floor(tMs) });
+        ui();
+      };
+      info.appendChild(sexSel);
       const sel = document.createElement('select');
       clipSelect = sel;
       const filter = document.createElement('input');
@@ -716,9 +770,9 @@ try {
     dist = (radius / Math.tan((camera.fov*Math.PI/180)/2)) * 1.9; if(!isFinite(dist) || dist <= 0) dist = 5;
     updateCam();
     let spin = false;
-    window.addEventListener('keydown', e => { if(e.key === ' '){ spin = !spin; e.preventDefault(); } if(e.key.toLowerCase() === 'w'){ root.traverse(o => { if(o.isMesh) o.material.wireframe = !o.material.wireframe; }); } });
+    window.addEventListener('keydown', e => { if(e.key === ' '){ spin = !spin; e.preventDefault(); } if(e.key.toLowerCase() === 'x'){ root.traverse(o => { if(o.isMesh) o.material.wireframe = !o.material.wireframe; }); } });
     const morphInfo = morphs.length ? ` · ${morphs.length} morph anim` : '';
-    info.innerHTML = `${D.name || ''}<br>${drawn} meshes${morphInfo}<br>drag rotate · wheel zoom · space spin · W wireframe`;
+    info.innerHTML = `${D.name || ''}<br>${drawn} meshes${morphInfo}<br>drag rotate · wheel zoom · WASD/RF fly (Shift fast) · space spin · X wireframe`;
     const t0 = performance.now();
     function tick(){
       if(spin) root.rotation.y += 0.005;

@@ -59,7 +59,13 @@ function loadCharacter(charDir, gender, equip){
   const skel = loadScene(path.join(charDir, gender + '_bip.scn'));
   const { parts, textures } = loadParts(charDir, gender, equip);
   addSceneTextures(skel, textures);
-  return { skel, parts, textures, animNames: skel.animNames, gender };
+  // an accessory being previewed (acc/<file>), worn on the head
+  const accessories = [];
+  const accFile = equip && equip.acc ? path.join(charDir, 'acc', equip.acc) : null;
+  if(accFile && fs.existsSync(accFile)){
+    try { const sc = loadScene(accFile); accessories.push({ scene: sc, bone: 'Bip01 Head' }); addSceneTextures(sc, textures); } catch(e) {}
+  }
+  return { skel, parts, accessories, textures, animNames: skel.animNames, gender };
 }
 
 function pieceTextureKey(dir, texture){ return (dir || '') + '|' + (texture || ''); }

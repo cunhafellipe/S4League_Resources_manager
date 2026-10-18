@@ -61,6 +61,15 @@ export class ParticleNode {
     this.keys = node.keys || [];
     this.beginTime = node.beginTime || 0;
     this.endTime = node.endTime || 0;
+    // The node of the effect's loaded .scn this system hangs from (the client
+    // parents a CActParticle under the scene node of that name; empty = the
+    // effect root), and the CParticleData ScaleFlag bits: Emitter 1,
+    // EmitPerSec 2, Size 4, LifeTime 8. The S10 particle init multiplies the
+    // key sizes by the node's largest axis scale only with bit 4.
+    this.nodeName = node.nodeName || '';
+    this.scaleFlags = node.scaleFlags | 0;
+    this.nodeScale = 1;
+    this.continuous = !!(node.emitters && node.emitters[0] && node.emitters[0].continuance);
 
     const em = this.emitter;
     this.lifetime = Math.max(1, em?.lifetime || node.endTime || 1000);
@@ -147,14 +156,18 @@ export class ParticleNode {
     this.stats = { alive: 0, first: null, size: 0 };
   }
 
-  update(tMs) {
+  // tAbs: an unwrapped clock. Continuous emitters are born on it, so a looping
+  // sequence does not reset them at every pass (the crystal plasma's hilt glow
+  // lives 3000 ms inside a 1700 ms sequence and peaked just as the loop
+  // restarted). Bursts stay on the sequence time.
+  update(tMs, tAbs = tMs) {
     const g = this.points.geometry;
     const pos = g.attributes.position, col = g.attributes.pcolor, siz = g.attributes.psize;
     const em = this.emitter;
     const S = this.scale;
 
     const active = tMs >= this.beginTime && (this.endTime <= 0 || tMs <= this.endTime);
-    const local = tMs - this.beginTime;
+    const local = (this.continuous ? tAbs : tMs) - this.beginTime;
 
     const ox = (em?.origin.x || 0), oy = (em?.origin.y || 0), oz = (em?.origin.z || 0);
     const gx = (em?.gravity.x || 0), gy = (em?.gravity.y || 0), gz = (em?.gravity.z || 0);
@@ -191,7 +204,10 @@ export class ParticleNode {
       const a = Number.isFinite(k.a) ? k.a : 1;
       col.setXYZW(i, k.r || 0, k.g || 0, k.b || 0, a);
 
-      const sz = Math.max(0.01, (Math.abs(k.sizeX) + Math.abs(k.sizeY)) * 0.5) * S;
+      // S10 quad builder (sub_1C8D470): corners at +-(sizeX, sizeY) - the key
+      // size is the HALF extent, so the sprite's diameter is twice it.
+      const sizeScale = (this.scaleFlags & 4) ? this.nodeScale : 1;
+      const sz = Math.max(0.01, (Math.abs(k.sizeX) + Math.abs(k.sizeY))) * S * sizeScale;
       siz.setX(i, sz);
 
       if (a > 0.01) {
@@ -205,6 +221,7 @@ export class ParticleNode {
   }
 
   setPixelScale(v) { this.material.uniforms.uPixelScale.value = v; }
+  setNodeScale(v) { this.nodeScale = Number.isFinite(v) && v > 0 ? v : 1; }
 
   fullExtent() {
     const e = this.emitter;

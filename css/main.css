@@ -449,7 +449,7 @@ body.darkMode {
             }
 
 
-            .backFromResource, .selectResourceFolder, .selectLiveWeaponFolder, .loadResourceBrowser, .extractResources, .extractXeroResources, .packResources, .setResourceKey, .lockResourceKey, .unlockResourceKey, .packResources12, .packByFolder, .unpackResources12, .extractCrc32, .extractSections, .validateManifestResources, .packResourcesGrf, .unpackResourcesGrf, .selectSeqFile, .decryptSeq, .liveResourceAdd, .liveCostumesAdd, .resourceLiveAll, .resourceLiveAdded, .resourceLiveSkipped, .resourceSearchBtn, .openTempResource, .extractSingleResource, .replaceResource, .addResource, .deleteResource, .saveResourceChanges {
+            .backFromResource, .selectResourceFolder, .selectLiveWeaponFolder, .loadResourceBrowser, .extractResources, .packResources, .setResourceKey, .lockResourceKey, .unlockResourceKey, .packResources12, .packByFolder, .unpackResources12, .extractCrc32, .extractSections, .validateManifestResources, .packResourcesGrf, .unpackResourcesGrf, .selectSeqFile, .decryptSeq, .liveResourceAdd, .liveCostumesAdd, .resourceLiveAll, .resourceLiveAdded, .resourceLiveSkipped, .resourceSearchBtn, .openTempResource, .extractSingleResource, .replaceResource, .addResource, .deleteResource, .saveResourceChanges {
                 background-color: var(--panel-color);
                 color: var(--primary-color);
                 padding: 6px 10px;
@@ -462,7 +462,7 @@ body.darkMode {
                 font-size: 0.8rem;
             }
 
-            .backFromResource:hover, .selectResourceFolder:hover, .selectLiveWeaponFolder:hover, .loadResourceBrowser:hover, .extractResources:hover, .extractXeroResources:hover, .packResources:hover, .setResourceKey:hover, .lockResourceKey:hover, .unlockResourceKey:hover, .packResources12:hover, .packByFolder:hover, .unpackResources12:hover, .extractCrc32:hover, .extractSections:hover, .validateManifestResources:hover, .packResourcesGrf:hover, .unpackResourcesGrf:hover, .selectSeqFile:hover, .decryptSeq:hover, .liveResourceAdd:hover, .liveCostumesAdd:hover, .resourceLiveAll:hover, .resourceLiveAdded:hover, .resourceLiveSkipped:hover, .resourceSearchBtn:hover, .openTempResource:hover, .extractSingleResource:hover, .replaceResource:hover, .addResource:hover, .deleteResource:hover, .saveResourceChanges:hover {
+            .backFromResource:hover, .selectResourceFolder:hover, .selectLiveWeaponFolder:hover, .loadResourceBrowser:hover, .extractResources:hover, .packResources:hover, .setResourceKey:hover, .lockResourceKey:hover, .unlockResourceKey:hover, .packResources12:hover, .packByFolder:hover, .unpackResources12:hover, .extractCrc32:hover, .extractSections:hover, .validateManifestResources:hover, .packResourcesGrf:hover, .unpackResourcesGrf:hover, .selectSeqFile:hover, .decryptSeq:hover, .liveResourceAdd:hover, .liveCostumesAdd:hover, .resourceLiveAll:hover, .resourceLiveAdded:hover, .resourceLiveSkipped:hover, .resourceSearchBtn:hover, .openTempResource:hover, .extractSingleResource:hover, .replaceResource:hover, .addResource:hover, .deleteResource:hover, .saveResourceChanges:hover {
                 background-color: var(--secondary-color);
                 color: white;
                 transform: translateY(-2px);

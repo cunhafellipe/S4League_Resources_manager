@@ -62,6 +62,8 @@ contextBridge.exposeInMainWorld('puente', {
     resourceSeqReplaceString: (data) => ipcRenderer.invoke('resourceSeqReplaceString', data),
     scnPreview3D: (data) => ipcRenderer.invoke('scnPreview3D', data),
     seqPreview3D: (data) => ipcRenderer.invoke('seqPreview3D', data),
+    mapsForScene: (data) => ipcRenderer.invoke('mapsForScene', data),
+    mapPreview3D: (data) => ipcRenderer.invoke('mapPreview3D', data),
     resourceAddFile: (data) => ipcRenderer.invoke('resourceAddFile', data),
     resourceAddDroppedFiles: (data) => ipcRenderer.invoke('resourceAddDroppedFiles', data),
     resourceDeleteFile: (data) => ipcRenderer.invoke('resourceDeleteFile', data),
